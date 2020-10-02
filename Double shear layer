@@ -1,4 +1,4 @@
-# 
+# 2020.06.09 version 1.0  the author thank Doc.Gu for her iso_gradient scheme.
 
 import numpy 
 import matplotlib.pyplot as plt
