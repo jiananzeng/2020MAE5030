@@ -2,12 +2,11 @@
 """
 Created on Sat Sep 26 15:28:08 2020
 
-@author: Jianan
+@author: Admin
 """
 
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.cm as cm
 import math
 
 class Domain:
@@ -102,9 +101,7 @@ class Domain:
             ss[i, 1:] = u
         return state
                   
-    def exact(self,y):
-        u_ex=(y[0]**2-y**2)/4
-        return u_ex
+
     
 d2q9_e = np.array([
     [ 0,  0],
@@ -125,62 +122,55 @@ def pf2d(x, y):
     vy = 0
     return 1., np.array([vx, vy])
 
-Reynolds  = 500.
+def post_plot (y, u_ex, ux):
+    plt.title('Poiseuille Flow')
+    plt.scatter(y,u_ex,color='red',marker=',',label="Exact")
+    plt.plot(y,ux,color='blue',label="D2Q9")
+    plt.legend()
+    plt.xlabel('Y')
+    plt.ylabel('Ux')
+    # plt.savefig("w%d.png" % (i))
+    plt.show()
+    # plt.pause(0.15)
+    # plt.close()
+  
+def exact( y ):
+    return dP_dx/mu*(y[0]**2-y**2)/2
+
 Mach      = 0.1
 L         = [50, 20]
-thickness = 0.02
-delta     = 0.001
-n_max     = 3000
-err_max       = 1e-5
+u0  = Mach / math.sqrt(3.)
+mu  = u0 / L[1]
 
-u0 = Mach / math.sqrt(3.)
-nu = u0 * L[1] / Reynolds
+nu  = 1 / 1e3
 tau = 3. * nu + .5
-ForceX=1e-6
-ForceY=0.
+
+dP_dx=1.
+
+ForceX=dP_dx*1e-5/1.04
+ForceY=0
 Force=np.array([ForceX, ForceY])
+
+i       = 0
+err     = 1
+n_max   = 3000
+err_max = 1e-5
 
 domain = Domain(L, d2q9_e, d2q9_w, tau)
 domain.initialize(pf2d)
 state_old=domain.state()
-i=0
-err=1
-
 
 while (i<n_max and err>err_max ):
     i=i+1
     domain.advance(100)
     state = domain.state()
-    err=max(state_old[25,:,1]/state[25,:,1]-1)
+    err=max(state[25,:,1]/state_old[25,:,1]-1)
     state_old=state
     
-    if i % 10 == 0:
+    if i % 10 == 0:     
         print(i, err)
+        y    = np.linspace(-0.5,0.5,state.shape[1])
+        u_ex = exact(y)
+        ux   = state[25,:,1]
+        post_plot(y, u_ex, ux)
   
-# for i in range(n_max):
-#     domain.advance(100)
-#     state = domain.state()
-#     if max(state[25,:,1]-state_old[25,:,1]) >= err:    
-#         break
-#     else
-#         state_old=state
-    
-#     if i % 10 == 0:
-#         print(i)
-        
-    
-y=np.linspace(-0.5,0.5,state.shape[1])
-u_ex=domain.exact(y)
-ux=state[25,:,1]
-    # plt.imsave("w%d.png"(i),ux,cmap=cm.gray,origin='lower')
-
-# plt.plot(y,ux,c='red',label="Exact")
-
-plt.title('Poiseuille Flow')
-plt.scatter(y,u_ex,color='red',marker=',',label="Exact")
-plt.plot(y,9.5*state[25,:,1],color='blue',label="D2Q9")
-plt.legend()
-plt.xlabel('Y')
-plt.ylabel('Ux')
-plt.show()
-
