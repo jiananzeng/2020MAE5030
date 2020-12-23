@@ -1,0 +1,188 @@
+% 2D shear layer
+% 2020.12.23  version 1.0
+
+%% spatial non-uniform grids
+clc; clear;
+
+Nx=100; Ny=100; 
+
+x = linspace(0,1,Nx);
+y = linspace(0,1,Ny);
+[xx,yy]=ndgrid(x,y);
+
+%% D2Q9
+
+d2q9_e = [0,0; 1,0; 0,1; -1,0; 0,-1;  1,1; -1,1; -1,-1; 1,-1];
+d2q9_w = [4/9; 1/9; 1/9;  1/9;  1/9; 1/36; 1/36;  1/36; 1/36];
+d2q9_c = sqrt(3);
+
+
+e = d2q9_e;
+w = d2q9_w;
+c = d2q9_c;
+
+%%
+Re=1e4;
+Ma=0.1;
+thickness=0.02;
+delta=0.001;
+
+u0=Ma/c;
+nu=u0*Nx/Re;
+tau=3*nu+0.5;
+omega=1/tau;
+
+rho=ones(Nx,Ny); dudy=zeros(Nx,Ny); dvdx=zeros(Nx,Ny); 
+feq=zeros(Nx,Ny,9);
+
+%% MRT
+d2q9_M = [ 1,  1,  1,  1,  1,  1,  1,  1,  1;...
+          -4, -1, -1, -1, -1,  2,  2,  2,  2;...
+           4, -2, -2, -2, -2,  1,  1,  1,  1;...
+           0,  1,  0, -1,  0,  1, -1, -1,  1;...
+           0, -2,  0,  2,  0,  1, -1, -1,  1;...
+           0,  0,  1,  0, -1,  1,  1, -1, -1;...
+           0,  0, -2,  0,  2,  1,  1, -1, -1;...
+           0,  1, -1,  1, -1,  0,  0,  0,  0;...
+           0,  0,  0,  0,  0,  1, -1,  1, -1;];
+d2q9_s = diag([0, omega, omega-0.1, 0, 1.2, 0, 1.2, omega, omega]);
+
+M = d2q9_M;
+s = d2q9_s;
+
+Minv_s = M\s;
+
+%% initial()
+ux = u0*tanh((abs(yy-0.5)-0.25)/thickness);
+uy = delta*u0*sin(2*pi*(xx-0.25));
+
+for k=1:9
+    udotc = ux*e(k,1)+uy*e(k,2);
+    u2 = ux.^2+uy.^2;
+    feq(:,:,k) = rho.* w(k).* ( 1 + 3*udotc + 4.5*udotc*udotc - 1.5*u2 );
+end
+
+f=feq;
+
+%% main
+tmax=10000;
+err=1;
+t=0;
+while t < tmax && err>1e-7
+   t=t+1; 
+    %% collide
+   %single 
+%     for k=1:9
+%         udotc = ux*e(k,1)+uy*e(k,2);
+%         u2 = ux.^2+uy.^2;
+%         temp = 1+3*udotc+4.5*udotc.^2-1.5*u2;
+%         feq(:,:,k) = rho.* w(k).* temp;
+%         f(:,:,k) = (1-omega)*f(:,:,k) +omega*feq(:,:,k);
+%     end
+   % MRT  
+    meq=zeros(Nx,Ny,9);
+        
+    sz=size(f);
+    m = reshape( (M*reshape(f,[],sz(3))')', sz);
+
+    meq(:,:,1) =  rho;
+    meq(:,:,2) =  rho.*(-2 + 3*( ux.^2 + uy.^2) );
+    meq(:,:,3) =  rho.*( 1 - 3*( ux.^2 + uy.^2) );
+    meq(:,:,4) =  rho.*ux;
+    meq(:,:,5) = -rho.*ux;
+    meq(:,:,6) =  rho.*uy;
+    meq(:,:,7) = -rho.*uy;
+    meq(:,:,8) =  rho.*( ux.^2 - uy.^2 );
+    meq(:,:,9) =  rho.*ux.*uy;
+
+    m_temp = reshape( ( M\s*reshape( (m - meq),[],sz(3))' )', sz);
+
+    for k=1:9
+        f(:,:,k) = f(:,:,k)-m_temp(:,:,k);
+    end
+
+
+    
+    %% streaming 
+    
+     for k=1:9
+         f(:,:,k) = circshift(f(:,:,k), [e(k,1),e(k,2)]);
+     end
+
+    %% macro()
+    
+    rho_old=sum(f,3);
+    sz=size(f);
+    ux = reshape(reshape(f,[],sz(3))*e(:,1),sz(1:2))./rho_old;
+    uy = reshape(reshape(f,[],sz(3))*e(:,2),sz(1:2))./rho_old;
+    
+    if rem(t,500)==0
+        err = max(max(abs( rho_old ./ rho  )-1 ));
+        fprintf('%d %d \n',t, err);
+        figure(1)
+        clf
+        streamslice(x,y,ux',uy');
+        xlim([0,1]);
+        ylim([0,1]);
+        pause(0.1)
+    end
+    rho=rho_old;
+end
+
+return
+
+
+%% vorticity
+for i=2:Nx-1
+    for j=2:Ny-1
+        dudy(i,j)=(ux(i+1,j)-ux(i-1,j))/(x(i+1)-x(i-1));
+        dvdx(i,j)=(uy(i,j+1)-uy(i,j-1))/(y(j+1)-y(i-1));
+    end
+end
+Q=(dudy-dvdx).*2;
+surface(xx,yy,Q);
+contourf(x,y,Q);
+
+% Fourier transform
+LH = Nx/2;
+scale = 2i*pi/Nx;
+kx = scale * ( linspace(1, Nx, Nx) - LH + 1 );
+ky = scale * ( linspace(1, LH+1, LH+1) );
+
+kx1 = circshift(kx, LH+1);
+
+ux1 = fft(ifft(ux));
+uy1 = fft(ifft(uy));
+
+Q = fft(ifft(ux*ky - (uy'*kx')'));
+
+
+subplot(2,2,1)
+surface(xx,yy,uy);
+legend('rho');
+xlabel('x'); ylabel('y');
+
+subplot(2,2,2)
+contourf(x,y,ux');
+legend('u');
+xlabel('x'); ylabel('y');
+
+subplot(2,2,3)
+streamslice(x,y,ux',uy');
+legend('T');
+xlabel('x'); ylabel('y');
+
+subplot(2,2,4)
+contourf(x,y,T');
+legend('T');
+xlabel('x'); ylabel('y');
+fprintf('program ends \n');
+
+%% equilibrium
+
+% writeObj = VideoWriter('bubblerasing.avi');
+% open(writeObj);
+% frame = getframe;
+% frame.cdata = imresize(frame.cdata, [400,200]);
+% writeVideo(writeObj, frame);
+% close(writeObj);
